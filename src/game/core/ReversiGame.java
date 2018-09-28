@@ -76,9 +76,7 @@ public class ReversiGame {
     }
     
     private void fireReversiBoardStatus(ReversiGameEvent evt) {
-        System.out.println("WHAT THE ");
-        for (ReversiGameListener listener : otherListeners) {
-            System.out.println("FUCK???");
+            for (ReversiGameListener listener : otherListeners) {
             listener.reversiGameTurnChanged(evt);
         }
     }
@@ -87,7 +85,6 @@ public class ReversiGame {
         char[][] handledField = new char[8][8];
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
-                System.out.println();
                 handledField[i][j] = (fieldConfiguration.equals("")) ? (NOTHING) : (fieldConfiguration.charAt(8 * i + j));
             }
         }
@@ -107,7 +104,6 @@ public class ReversiGame {
                     currentTurnPlayer = line.charAt(0);
                 }
             }
-            printField();
         } catch (FileNotFoundException ex) {
             JOptionPane.showMessageDialog(null, "I couldn't find your save file!", "Oh no!", JOptionPane.ERROR_MESSAGE);
         } catch (IOException e) {
@@ -407,7 +403,7 @@ public class ReversiGame {
         return field[x][y] == BLACK || field[x][y] == WHITE;
     }
     
-    private void printField() {
+    public void printField() {
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
                 System.err.print(field[i][j] + "\t");

@@ -130,7 +130,6 @@ public class GameWindow extends javax.swing.JFrame {
     private Image black;
     private Image white;
     private Image hint;
-    private Image empty;
     private ReversiGame gameEngine;
 
     /**
@@ -388,7 +387,6 @@ public class GameWindow extends javax.swing.JFrame {
             black = ImageIO.read(new File(IMAGES_DIR + "black.png"));
             white = ImageIO.read(new File(IMAGES_DIR + "white.png"));
             hint = ImageIO.read(new File(IMAGES_DIR + "hint.png"));
-            empty = ImageIO.read(new File(IMAGES_DIR + "empty.png"));
         } catch (IOException e) {
             JOptionPane.showMessageDialog(null, "I couldn't load your images :(", "Aw snap!", JOptionPane.ERROR_MESSAGE);
             e.printStackTrace();
