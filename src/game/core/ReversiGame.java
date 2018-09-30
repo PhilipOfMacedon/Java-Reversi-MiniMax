@@ -12,7 +12,6 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import javax.swing.JOptionPane;
 import util.Coordinate2D;
@@ -30,31 +29,52 @@ public class ReversiGame {
     private List<ReversiGameListener> otherListeners;
     private List<Coordinate2D> lastTurnHints;
     private char currentTurnPlayer;
+    private int usedCellsCount;
+    private int scoreBlack;
+    private int scoreWhite;
+    private boolean isForAIprediction;
+    private boolean showHintsForBlack;
+    private boolean showHintsForWhite;
+    private boolean noMovesAvailable;
 
-    public ReversiGame(boolean loadFromSavedGame) {
+    public ReversiGame(boolean loadFromSavedGame, boolean blackHints, boolean whiteHints) {
         if (!loadFromSavedGame) {
             initializeElements(DEFAULT_CONFIG_DIR);
         } else {
             initializeElements(SAVED_GAME_DIR);
         }
+        isForAIprediction = false;
+        showHintsForBlack = blackHints;
+        showHintsForWhite = whiteHints;
     }
-    
+
     public ReversiGame(String customOrganization, char firstPlayer) {
         field = initializeField(customOrganization);
         currentTurnPlayer = (firstPlayer != BLACK) ? (WHITE) : (BLACK);
+        isForAIprediction = true;
+        recalculateScore();
+        lastTurnHints = new ArrayList<>();
     }
-    
+
+    public ReversiGame(char[][] customOrganization, char firstPlayer) {
+        field = customOrganization;
+        currentTurnPlayer = (firstPlayer != BLACK) ? (WHITE) : (BLACK);
+        isForAIprediction = true;
+        recalculateScore();
+        lastTurnHints = new ArrayList<>();
+    }
+
     public void resetGame() {
         createFields(DEFAULT_CONFIG_DIR);
         syncGameChanges();
     }
-    
+
     private void initializeElements(String savedConfigDir) {
         boardCells = new ReversiGameListener[8][8];
         otherListeners = new ArrayList<>();
         createFields(savedConfigDir);
     }
-    
+
     private void createFields(String savedConfigDir) {
         lastTurnHints = new ArrayList<>();
         loadFile(new File(savedConfigDir));
@@ -63,21 +83,25 @@ public class ReversiGame {
     public void addReversiGameListener(ReversiGameListener listener, Coordinate2D position) {
         boardCells[position.x][position.y] = listener;
     }
-    
+
     public void addReversiGameListener(ReversiGameListener listener) {
         otherListeners.add(listener);
     }
 
     private void fireReversiGameMovements(List<ReversiGameMovement> movements) {
-        for (ReversiGameMovement movement : movements) {
-            boardCells[movement.getPosition().x][movement.getPosition().y]
-                    .reversiGameBoardChanged(movement.getEvent());
+        if (boardCells != null) {
+            for (ReversiGameMovement movement : movements) {
+                boardCells[movement.getPosition().x][movement.getPosition().y]
+                        .reversiGameBoardChanged(movement.getEvent());
+            }
         }
     }
-    
+
     private void fireReversiBoardStatus(ReversiGameEvent evt) {
+        if (otherListeners != null) {
             for (ReversiGameListener listener : otherListeners) {
-            listener.reversiGameTurnChanged(evt);
+                listener.reversiGameTurnChanged(evt);
+            }
         }
     }
 
@@ -111,31 +135,52 @@ public class ReversiGame {
         }
     }
 
+    private void generateOutputFeedback(boolean willChangeTurn, List<ReversiGameMovement> movements) {
+        ReversiGameEvent evt = scanForHints(willChangeTurn);
+        if (lastTurnHints.isEmpty() && evt.getHints().isEmpty()) {
+            noMovesAvailable = true;
+        } else {
+            noMovesAvailable = false;
+        }
+        if (!isForAIprediction) {
+            if (previousPlayerHadHints()) {
+                setHintFields(movements, lastTurnHints, false);
+            }
+            if (showHintsForCurrentPlayer()) {
+                setHintFields(movements, evt.getHints(), true);
+            }
+        }
+        lastTurnHints = evt.getHints();
+        fireReversiGameMovements(movements);
+        if (!isForAIprediction) {
+            fireReversiBoardStatus(evt);
+        }
+    }
+
     public void syncGameChanges() {
         List<ReversiGameMovement> movements = new ArrayList<>();
+        usedCellsCount = 0;
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
                 movements.add(new ReversiGameMovement(new Coordinate2D(i, j), field[i][j]));
+                if (field[i][j] != NOTHING) {
+                    usedCellsCount++;
+                }
             }
         }
-        ReversiGameEvent evt = scanForHints(false);
-        setHintFields(movements, lastTurnHints, false);
-        setHintFields(movements, evt.getHints(), true);
-        lastTurnHints = evt.getHints();
-        fireReversiGameMovements(movements);
-        fireReversiBoardStatus(evt);
+        generateOutputFeedback(false, movements);
     }
-    
-    public void skip() {
-        List<ReversiGameMovement> movements = new ArrayList<>();
-        ReversiGameEvent evt = scanForHints(true);
-        setHintFields(movements, lastTurnHints, false);
-        setHintFields(movements, evt.getHints(), true);
-        lastTurnHints = evt.getHints();
-        fireReversiGameMovements(movements);
-        fireReversiBoardStatus(evt);
+
+    public void skip(char player) {
+        if (!isFinished() && player == currentTurnPlayer) {
+            List<ReversiGameMovement> movements = new ArrayList<>();
+            generateOutputFeedback(true, movements);
+        } else if (isFinished()) {
+            ReversiGameEvent evt = new ReversiGameEvent(this, new ArrayList<>(), scoreBlack, scoreWhite, currentTurnPlayer, true);
+            fireReversiBoardStatus(evt);
+        }
     }
-    
+
     private void setHintFields(List<ReversiGameMovement> movements, List<Coordinate2D> hints, boolean add) {
         if (add) {
             for (Coordinate2D hint : hints) {
@@ -148,55 +193,80 @@ public class ReversiGame {
             }
         }
     }
-    
+
     private void switchPlayers() {
-        if (currentTurnPlayer == BLACK) currentTurnPlayer = WHITE;
-        else currentTurnPlayer = BLACK;
+        if (currentTurnPlayer == BLACK) {
+            currentTurnPlayer = WHITE;
+        } else {
+            currentTurnPlayer = BLACK;
+        }
     }
-    
+
     private ReversiGameEvent scanForHints(boolean willChangeTurn) {
-        int scoreBlack = 0;
-        int scoreWhite = 0;
+        scoreBlack = 0;
+        scoreWhite = 0;
         List<Coordinate2D> hints = new ArrayList<>();
         if (willChangeTurn) {
             switchPlayers();
         }
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
-                if (field[i][j] == BLACK) scoreBlack++;
-                else if (field[i][j] == WHITE) scoreWhite++;
+                if (field[i][j] == BLACK) {
+                    scoreBlack++;
+                } else if (field[i][j] == WHITE) {
+                    scoreWhite++;
+                }
                 if (isCellUsable(i, j)) {
                     hints.add(new Coordinate2D(i, j));
                 }
             }
         }
-        return new ReversiGameEvent(this, hints, scoreBlack, scoreWhite, currentTurnPlayer);
+        return new ReversiGameEvent(this, hints, scoreBlack, scoreWhite, currentTurnPlayer, isFinished());
     }
 
-    public void put(int x, int y) {
-        if (isCellUsable(x, y)) {
+    public List<Coordinate2D> getHints() {
+        List<Coordinate2D> hints = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if (isCellUsable(i, j)) {
+                    hints.add(new Coordinate2D(i, j));
+                }
+            }
+        }
+        return hints;
+    }
+
+    private void recalculateScore() {
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if (field[i][j] == BLACK) scoreBlack++;
+                else if (field[i][j] == WHITE) scoreWhite++;
+            }
+        }
+    }
+    
+    public void put(int x, int y, char player) {
+        if (!isFinished() && player == currentTurnPlayer && isCellUsable(x, y)) {
+            usedCellsCount++;
             List<ReversiGameMovement> movements = scanCellNeighborhood(x, y, true);
             for (ReversiGameMovement movement : movements) {
                 field[movement.getPosition().x][movement.getPosition().y] = movement.getEvent();
             }
-            ReversiGameEvent evt = scanForHints(true);
-            setHintFields(movements, lastTurnHints, false);
-            setHintFields(movements, evt.getHints(), true);
-            lastTurnHints = evt.getHints();
-            
-            fireReversiGameMovements(movements);
+            generateOutputFeedback(true, movements);
+        } else if (isFinished()) {
+            ReversiGameEvent evt = new ReversiGameEvent(this, new ArrayList<>(), scoreBlack, scoreWhite, currentTurnPlayer, true);
             fireReversiBoardStatus(evt);
         }
     }
-    
+
     private boolean isCellUsable(int x, int y) {
-        return (field[x][y] == '_' ) && scanCellNeighborhood(x, y, false) != null;
+        return (field[x][y] == '_') && scanCellNeighborhood(x, y, false) != null;
     }
-    
+
     private List<ReversiGameMovement> scanCellNeighborhood(int x, int y, boolean makeMove) {
         if (!makeMove) {
-            if (scanLine(x, y, makeMove) != null || scanColumn(x, y, makeMove) != null ||
-                scanMainDiagonal(x, y, makeMove) != null || scanSecondaryDiagonal(x, y, makeMove) != null) {
+            if (scanLine(x, y, makeMove) != null || scanColumn(x, y, makeMove) != null
+                    || scanMainDiagonal(x, y, makeMove) != null || scanSecondaryDiagonal(x, y, makeMove) != null) {
                 return new ArrayList<>();
             }
             return null;
@@ -218,11 +288,13 @@ public class ReversiGame {
             if (movementsDiagonal2 != null) {
                 movements.addAll(movementsDiagonal2);
             }
-            if (!movements.isEmpty()) movements.add(new ReversiGameMovement(new Coordinate2D(x, y), currentTurnPlayer)); 
+            if (!movements.isEmpty()) {
+                movements.add(new ReversiGameMovement(new Coordinate2D(x, y), currentTurnPlayer));
+            }
             return movements;
         }
     }
-    
+
     private List<ReversiGameMovement> scanLine(int x, int y, boolean makeMove) {
         boolean foundOpposite = false;
         boolean foundDeadEnd = false;
@@ -236,15 +308,20 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(x, auxY), currentTurnPlayer));
                 } else if (field[x][auxY] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxY > 0 && !foundDeadEnd && !foundChain);
         }
         foundOpposite = foundDeadEnd = false;
-        if (foundChain) movements.addAll(auxEvts);
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
         auxEvts.clear();
         foundChain = false;
         auxY = y;
@@ -254,18 +331,25 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(x, auxY), currentTurnPlayer));
                 } else if (field[x][auxY] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxY < 7 && !foundDeadEnd && !foundChain);
         }
-        if (foundChain) movements.addAll(auxEvts);
-        if (movements.isEmpty()) return null;
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
+        if (movements.isEmpty()) {
+            return null;
+        }
         return movements;
     }
-    
+
     private List<ReversiGameMovement> scanColumn(int x, int y, boolean makeMove) {
         boolean foundOpposite = false;
         boolean foundDeadEnd = false;
@@ -279,15 +363,20 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(auxX, y), currentTurnPlayer));
                 } else if (field[auxX][y] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxX > 0 && !foundDeadEnd && !foundChain);
         }
         foundOpposite = foundDeadEnd = false;
-        if (foundChain) movements.addAll(auxEvts);
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
         auxEvts.clear();
         foundChain = false;
         auxX = x;
@@ -297,18 +386,25 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(auxX, y), currentTurnPlayer));
                 } else if (field[auxX][y] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxX < 7 && !foundDeadEnd && !foundChain);
         }
-        if (foundChain) movements.addAll(auxEvts);
-        if (movements.isEmpty()) return null;
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
+        if (movements.isEmpty()) {
+            return null;
+        }
         return movements;
     }
-    
+
     private List<ReversiGameMovement> scanMainDiagonal(int x, int y, boolean makeMove) {
         boolean foundOpposite = false;
         boolean foundDeadEnd = false;
@@ -323,15 +419,20 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(auxX, auxY), currentTurnPlayer));
                 } else if (field[auxX][auxY] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxX > 0 && auxY > 0 && !foundDeadEnd && !foundChain);
         }
         foundOpposite = foundDeadEnd = false;
-        if (foundChain) movements.addAll(auxEvts);
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
         auxEvts.clear();
         foundChain = false;
         auxX = x;
@@ -342,18 +443,25 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(auxX, auxY), currentTurnPlayer));
                 } else if (field[auxX][auxY] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxX < 7 && auxY < 7 && !foundDeadEnd && !foundChain);
         }
-        if (foundChain) movements.addAll(auxEvts);
-        if (movements.isEmpty()) return null;
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
+        if (movements.isEmpty()) {
+            return null;
+        }
         return movements;
     }
-    
+
     private List<ReversiGameMovement> scanSecondaryDiagonal(int x, int y, boolean makeMove) {
         boolean foundOpposite = false;
         boolean foundDeadEnd = false;
@@ -368,15 +476,20 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(auxX, auxY), currentTurnPlayer));
                 } else if (field[auxX][auxY] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxX > 0 && auxY < 7 && !foundDeadEnd && !foundChain);
         }
         foundOpposite = foundDeadEnd = false;
-        if (foundChain) movements.addAll(auxEvts);
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
         auxEvts.clear();
         foundChain = false;
         auxX = x;
@@ -387,22 +500,29 @@ public class ReversiGame {
                     foundOpposite = true;
                     auxEvts.add(new ReversiGameMovement(new Coordinate2D(auxX, auxY), currentTurnPlayer));
                 } else if (field[auxX][auxY] == currentTurnPlayer && foundOpposite) {
-                    if (!makeMove) return movements;
-                    else foundChain = true;
+                    if (!makeMove) {
+                        return movements;
+                    } else {
+                        foundChain = true;
+                    }
                 } else {
                     foundDeadEnd = true;
                 }
             } while (auxX < 7 && auxY > 0 && !foundDeadEnd && !foundChain);
         }
-        if (foundChain) movements.addAll(auxEvts);
-        if (movements.isEmpty()) return null;
+        if (foundChain) {
+            movements.addAll(auxEvts);
+        }
+        if (movements.isEmpty()) {
+            return null;
+        }
         return movements;
     }
-    
+
     private boolean isPlayerChar(int x, int y) {
         return field[x][y] == BLACK || field[x][y] == WHITE;
     }
-    
+
     public void printField() {
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
@@ -411,7 +531,11 @@ public class ReversiGame {
             System.err.println("");
         }
     }
-    
+
+    public boolean isFinished() {
+        return (scoreBlack == 0 || scoreWhite == 0 || usedCellsCount == 64 || noMovesAvailable);
+    }
+
     @Override
     public String toString() {
         String fieldRepresentation = "";
@@ -421,6 +545,34 @@ public class ReversiGame {
             }
         }
         return fieldRepresentation;
+    }
+
+    private boolean showHintsForCurrentPlayer() {
+        return (currentTurnPlayer == BLACK && showHintsForBlack) || (currentTurnPlayer == WHITE && showHintsForWhite);
+    }
+
+    private boolean previousPlayerHadHints() {
+        return (currentTurnPlayer == WHITE && showHintsForBlack) || (currentTurnPlayer == BLACK && showHintsForWhite);
+    }
+
+    public char[][] getMatrixCopy() {
+        char[][] copy = new char[8][8];
+        for (int i = 0; i < 8; i++) {
+            System.arraycopy(field[i], 0, copy[i], 0, 8);
+        }
+        return copy;
+    }
+
+    public char getCurrentPlayer() {
+        return currentTurnPlayer;
+    }
+
+    public int getRelativeScoring(char perspective) {
+        if (perspective == BLACK) {
+            return scoreBlack - scoreWhite;
+        } else {
+            return scoreWhite - scoreBlack;
+        }
     }
 
 }

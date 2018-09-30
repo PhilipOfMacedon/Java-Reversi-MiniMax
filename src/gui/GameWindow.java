@@ -5,6 +5,8 @@
  */
 package gui;
 
+import game.ai.AISettings;
+import game.ai.ComputerPlayer;
 import game.core.ReversiGame;
 import game.core.ReversiGameAdapter;
 import java.awt.Color;
@@ -27,8 +29,10 @@ import util.Coordinate2D;
 import static util.Paths.*;
 import static game.core.ReversiGameAction.*;
 import game.core.ReversiGameEvent;
+import java.awt.Frame;
 import java.awt.GridBagLayout;
 import javax.swing.JLabel;
+import util.RunningTools;
 
 /**
  *
@@ -36,6 +40,39 @@ import javax.swing.JLabel;
  */
 public class GameWindow extends javax.swing.JFrame {
 
+    private class AuxiliarGUIEnhancements implements Runnable {
+        
+        private boolean isAITime;
+        private boolean running = true;
+        
+        public void stop() {
+            running = false;
+        }
+
+        public void start() {
+            running = true;
+        }
+        
+        @Override
+        public void run() {
+            int counter = 0;
+            while(!gameEngine.isFinished() && running) {
+                RunningTools.holdOn(200);
+                if (isAITime) {
+                    String reticences = "";
+                    for (int i = 0; i < counter; i++) {
+                        reticences += '.';
+                    }
+                    labelAIThinking.setText(reticences + "AI is thinking, wait" + reticences);
+                    if (counter <= 3) counter++; else counter = 0;
+                } else {
+                    counter = 1;
+                }
+            }
+        }
+        
+    }
+    
     private class BoardCell extends JPanel {
 
         private Coordinate2D position;
@@ -55,7 +92,7 @@ public class GameWindow extends javax.swing.JFrame {
                 @Override
                 public void mouseClicked(MouseEvent e) {
                     //console.append("LOL OLHA ISSO: " + panel.getPosition() + "\n");
-                    gameEngine.put(position.x, position.y);
+                    gameEngine.put(position.x, position.y, humanColor);
                 }
             });
             setLayout(new GridBagLayout());
@@ -131,6 +168,11 @@ public class GameWindow extends javax.swing.JFrame {
     private Image white;
     private Image hint;
     private ReversiGame gameEngine;
+    private ComputerPlayer machine;
+    private char humanColor;
+    private boolean showHumanHints;
+    private boolean showMachineHints;
+    private AuxiliarGUIEnhancements labelWatchdog;
 
     /**
      * Creates new form GameWindow
@@ -140,6 +182,7 @@ public class GameWindow extends javax.swing.JFrame {
         initGameStructures();
         createBoard();
         startGame();
+        setExtendedState(Frame.MAXIMIZED_BOTH);
     }
 
     /**
@@ -154,7 +197,6 @@ public class GameWindow extends javax.swing.JFrame {
         boardContainer = new javax.swing.JPanel();
         board = new javax.swing.JPanel();
         sidePanel = new javax.swing.JPanel();
-        btnOptions = new javax.swing.JButton();
         btnRestart = new javax.swing.JButton();
         btnUndo = new javax.swing.JButton();
         btnSetLevel = new javax.swing.JButton();
@@ -169,11 +211,11 @@ public class GameWindow extends javax.swing.JFrame {
         jLabel3 = new javax.swing.JLabel();
         jLabel4 = new javax.swing.JLabel();
         btnPassTurn = new javax.swing.JButton();
+        labelAIThinking = new javax.swing.JLabel();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setTitle("Red & Black Reversi");
         setBackground(new java.awt.Color(0, 0, 0));
-        setPreferredSize(new java.awt.Dimension(600, 600));
         addComponentListener(new java.awt.event.ComponentAdapter() {
             public void componentResized(java.awt.event.ComponentEvent evt) {
                 formComponentResized(evt);
@@ -203,17 +245,6 @@ public class GameWindow extends javax.swing.JFrame {
         sidePanel.setBackground(new java.awt.Color(204, 0, 0));
         sidePanel.setBorder(javax.swing.BorderFactory.createBevelBorder(javax.swing.border.BevelBorder.RAISED));
         sidePanel.setPreferredSize(new java.awt.Dimension(324, 727));
-
-        btnOptions.setBackground(new java.awt.Color(153, 0, 0));
-        btnOptions.setForeground(new java.awt.Color(204, 204, 204));
-        btnOptions.setToolTipText("Settings");
-        btnOptions.setFocusable(false);
-        btnOptions.setIcon(getImageIconFromFile("settings.png", ICONS_DIR, 28, 28));
-        btnOptions.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnOptionsActionPerformed(evt);
-            }
-        });
 
         btnRestart.setBackground(new java.awt.Color(153, 0, 0));
         btnRestart.setForeground(new java.awt.Color(204, 204, 204));
@@ -303,17 +334,20 @@ public class GameWindow extends javax.swing.JFrame {
                     .addComponent(progressWhite, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                     .addComponent(progressBlack, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                     .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
-                        .addComponent(labelWhitePiece, javax.swing.GroupLayout.PREFERRED_SIZE, 48, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(jLabel3)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(labelWhiteScore, javax.swing.GroupLayout.PREFERRED_SIZE, 194, javax.swing.GroupLayout.PREFERRED_SIZE))
-                    .addGroup(jPanel1Layout.createSequentialGroup()
-                        .addComponent(labelBlackScore, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(jLabel4)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(labelBlackPiece, javax.swing.GroupLayout.PREFERRED_SIZE, 48, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                        .addGap(0, 0, Short.MAX_VALUE)
+                        .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
+                                .addComponent(labelWhitePiece, javax.swing.GroupLayout.PREFERRED_SIZE, 48, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(jLabel3)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(labelWhiteScore, javax.swing.GroupLayout.PREFERRED_SIZE, 194, javax.swing.GroupLayout.PREFERRED_SIZE))
+                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
+                                .addComponent(labelBlackScore, javax.swing.GroupLayout.PREFERRED_SIZE, 194, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(jLabel4)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(labelBlackPiece, javax.swing.GroupLayout.PREFERRED_SIZE, 48, javax.swing.GroupLayout.PREFERRED_SIZE)))))
                 .addContainerGap())
         );
         jPanel1Layout.setVerticalGroup(
@@ -340,6 +374,11 @@ public class GameWindow extends javax.swing.JFrame {
                 .addContainerGap())
         );
 
+        labelAIThinking.setFont(new java.awt.Font("Dialog", 1, 18)); // NOI18N
+        labelAIThinking.setForeground(new java.awt.Color(238, 238, 238));
+        labelAIThinking.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        labelAIThinking.setText("AI is thinking");
+
         javax.swing.GroupLayout sidePanelLayout = new javax.swing.GroupLayout(sidePanel);
         sidePanel.setLayout(sidePanelLayout);
         sidePanelLayout.setHorizontalGroup(
@@ -347,30 +386,31 @@ public class GameWindow extends javax.swing.JFrame {
             .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, sidePanelLayout.createSequentialGroup()
                 .addComponent(btnInfo, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                .addComponent(btnSetLevel, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(btnUndo, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(btnRestart, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
-                .addComponent(btnOptions, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addComponent(btnSetLevel, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE))
             .addGroup(sidePanelLayout.createSequentialGroup()
                 .addContainerGap()
-                .addComponent(jPanel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                .addGroup(sidePanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jPanel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(labelAIThinking, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
                 .addContainerGap())
         );
         sidePanelLayout.setVerticalGroup(
             sidePanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(sidePanelLayout.createSequentialGroup()
                 .addGroup(sidePanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(btnOptions, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(btnRestart, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(btnUndo, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(btnSetLevel, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(btnInfo, javax.swing.GroupLayout.PREFERRED_SIZE, 36, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addGap(18, 18, 18)
                 .addComponent(jPanel1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(349, Short.MAX_VALUE))
+                .addGap(139, 139, 139)
+                .addComponent(labelAIThinking, javax.swing.GroupLayout.PREFERRED_SIZE, 48, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addContainerGap(162, Short.MAX_VALUE))
         );
 
         getContentPane().add(sidePanel, java.awt.BorderLayout.EAST);
@@ -380,6 +420,14 @@ public class GameWindow extends javax.swing.JFrame {
 
     private void startGame() {
         gameEngine.syncGameChanges();
+        startAI();
+    }
+    
+    private void startAI() {
+        Thread machineThread = new Thread(machine);
+        machineThread.start();
+        Thread guiAuxThread = new Thread(labelWatchdog);
+        guiAuxThread.start();
     }
 
     private void loadImages() {
@@ -418,28 +466,32 @@ public class GameWindow extends javax.swing.JFrame {
 
     }//GEN-LAST:event_formWindowStateChanged
 
-    private void btnOptionsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnOptionsActionPerformed
-
-    }//GEN-LAST:event_btnOptionsActionPerformed
-
     private void btnRestartActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRestartActionPerformed
-        // TODO add your handling code here:
+        gameEngine.resetGame();
+        machine.stop();
+        machine.start();
+        labelWatchdog.stop();
+        labelWatchdog.start();
+        startGame();
     }//GEN-LAST:event_btnRestartActionPerformed
 
     private void btnUndoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnUndoActionPerformed
-        // TODO add your handling code here:
+        JOptionPane.showMessageDialog(this, "I can't do that right now, I'm still learning somethings, you know? ;)", "Whoa hold on pal!", JOptionPane.INFORMATION_MESSAGE);
     }//GEN-LAST:event_btnUndoActionPerformed
 
     private void btnSetLevelActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSetLevelActionPerformed
-        // TODO add your handling code here:
+        AISettings newSettings = GameOptions.loadSettings(this, machine.getSettings());
+        if (newSettings != null) {
+            machine.updateSettings(newSettings);
+        }
     }//GEN-LAST:event_btnSetLevelActionPerformed
 
     private void btnInfoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnInfoActionPerformed
-        JOptionPane.showMessageDialog(this, "Still under developement!!", "Be patient!", JOptionPane.INFORMATION_MESSAGE);
+        new HelpDialog(this, true);
     }//GEN-LAST:event_btnInfoActionPerformed
 
     private void btnPassTurnActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnPassTurnActionPerformed
-        gameEngine.skip();
+        gameEngine.skip(humanColor);
     }//GEN-LAST:event_btnPassTurnActionPerformed
 
     /**
@@ -453,7 +505,7 @@ public class GameWindow extends javax.swing.JFrame {
          */
         try {
             for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-                if ("Nimbus".equals(info.getName())) {
+                if ("Metal".equals(info.getName())) {
                     javax.swing.UIManager.setLookAndFeel(info.getClassName());
                     break;
                 }
@@ -481,7 +533,6 @@ public class GameWindow extends javax.swing.JFrame {
     private javax.swing.JPanel board;
     private javax.swing.JPanel boardContainer;
     private javax.swing.JButton btnInfo;
-    private javax.swing.JButton btnOptions;
     private javax.swing.JButton btnPassTurn;
     private javax.swing.JButton btnRestart;
     private javax.swing.JButton btnSetLevel;
@@ -489,6 +540,7 @@ public class GameWindow extends javax.swing.JFrame {
     private javax.swing.JLabel jLabel3;
     private javax.swing.JLabel jLabel4;
     private javax.swing.JPanel jPanel1;
+    private javax.swing.JLabel labelAIThinking;
     private javax.swing.JLabel labelBlackPiece;
     private javax.swing.JLabel labelBlackScore;
     private javax.swing.JLabel labelWhitePiece;
@@ -499,7 +551,14 @@ public class GameWindow extends javax.swing.JFrame {
     // End of variables declaration//GEN-END:variables
 
     private void initGameStructures() {
-        gameEngine = new ReversiGame(false);
+        humanColor = BLACK;
+        showHumanHints = true;
+        showMachineHints = false;
+        gameEngine = new ReversiGame(false, showHumanHints, showMachineHints);
+        AISettings settings = new AISettings();
+        settings.loadDefaultPreset("normal");
+        machine = new ComputerPlayer(WHITE, gameEngine, settings);
+        labelWatchdog = new AuxiliarGUIEnhancements();
         loadImages();
     }
 
@@ -516,6 +575,8 @@ public class GameWindow extends javax.swing.JFrame {
         int sizeY = boardContainer.getSize().height;
         int side = (sizeX < sizeY) ? (sizeX) : (sizeY);
 
+        if (side < 8) side = 8;
+        
         return side;
     }
 
@@ -566,6 +627,8 @@ public class GameWindow extends javax.swing.JFrame {
                 updateGUI(evt);
             }
         });
+        revalidate();
+        repaint();
     }
 
     private void updateGUI(ReversiGameEvent evt) {
@@ -574,6 +637,23 @@ public class GameWindow extends javax.swing.JFrame {
             btnPassTurn.setText(player + " IS OUT OF MOVES");
         } else {
             btnPassTurn.setText("IT'S " + player + "'s TURN");
+        }
+        if (evt.getCurrentActivePlayer() == BLACK) {
+            labelWatchdog.isAITime = false;
+            labelAIThinking.setText("");
+        } else {
+            labelWatchdog.isAITime = true;
+            labelAIThinking.setText("AI is thinking, wait");
+            machine.giveTurn(evt);
+        }
+        if (!evt.isGamePlayable()) {
+            btnPassTurn.setText("GAME FINISHED!!!");
+            if (evt.getBlackScore() != evt.getWhiteScore()) {
+                String winner = (evt.getBlackScore() > evt.getWhiteScore()) ? ("BLACK") : ("WHITE");
+                labelAIThinking.setText(winner + " is the WINNER!!!");
+            } else {
+                labelAIThinking.setText("DRAW GAME, no winner!!!");
+            }        
         }
         labelBlackScore.setText(evt.getBlackScore() + "");
         labelWhiteScore.setText(evt.getWhiteScore() + "");

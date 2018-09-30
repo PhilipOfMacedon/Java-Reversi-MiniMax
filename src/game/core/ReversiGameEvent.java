@@ -20,13 +20,15 @@ public class ReversiGameEvent extends EventObject {
     private int scoreBlack;
     private int scoreWhite;
     private char currentActivePlayer;
+    private boolean isFinished;
 
-    public ReversiGameEvent(Object source, List<Coordinate2D> hints, int scoreBlack, int scoreWhite, char currentActivePlayer) {
+    public ReversiGameEvent(Object source, List<Coordinate2D> hints, int scoreBlack, int scoreWhite, char currentActivePlayer, boolean isFinished) {
         super(source);
         this.hints = hints;
         this.scoreBlack = scoreBlack;
         this.scoreWhite = scoreWhite;
         this.currentActivePlayer = currentActivePlayer;
+        this.isFinished = isFinished;
     }
     
     public List<Coordinate2D> getHints() {
@@ -46,6 +48,10 @@ public class ReversiGameEvent extends EventObject {
     }
     
     public boolean isGamePlayable() {
-        return scoreBlack != 0 && scoreWhite != 0;
+        return !isFinished;
+    }
+    
+    public boolean isTurnPlayable() {
+        return hints.size() > 0;
     }
 }
