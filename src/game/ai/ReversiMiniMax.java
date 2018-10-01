@@ -5,6 +5,7 @@
  */
 package game.ai;
 
+import game.config.AISettings;
 import game.core.ReversiGame;
 import java.util.List;
 import util.Coordinate2D;
